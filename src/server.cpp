@@ -9,58 +9,130 @@
 #include <netdb.h>
 
 int main(int argc, char **argv) {
-   // Flush after every std::cout / std::cerr
-   std::cout << std::unitbuf;
-   std::cerr << std::unitbuf;
+  int bufferSize = 1000;
+  std::string inBuffer (bufferSize, 0);
 
-   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-   if (server_fd < 0) {
+  // Flush after every std::cout / std::cerr
+  std::cout << std::unitbuf;
+  std::cerr << std::unitbuf;
+
+  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (server_fd < 0) {
     std::cerr << "Failed to create server socket\n";
     return 1;
-   }
-  
-   // Since the tester restarts your program quite often, setting SO_REUSEADDR
-   // ensures that we don't run into 'Address already in use' errors
-   int reuse = 1;
-   if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-     std::cerr << "setsockopt failed\n";
-     return 1;
-   }
-  
-   struct sockaddr_in server_addr;
-   server_addr.sin_family = AF_INET;
-   server_addr.sin_addr.s_addr = INADDR_ANY;
-   server_addr.sin_port = htons(4221);
-  
-   if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0) {
-     std::cerr << "Failed to bind to port 4221\n";
-     return 1;
-   }
-  
-   int connection_backlog = 5;
-   if (listen(server_fd, connection_backlog) != 0) {
-     std::cerr << "listen failed\n";
-     return 1;
-   }
-  
-   struct sockaddr_in client_addr;
-   int client_addr_len = sizeof(client_addr);
-  
-   std::cout << "Waiting for a client to connect...\n";
-  
-   int client = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
-   std::cout << "Client connected\n";
+  }
 
-   std::string httpVersion ("HTTP/1.1");
-   int statusCode = 200;
-   std::string reason ("OK");
+  // Since the tester restarts your program quite often, setting SO_REUSEADDR
+  // ensures that we don't run into 'Address already in use' errors
+  int reuse = 1;
+  if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+    std::cerr << "setsockopt failed\n";
+    return 1;
+  }
 
-   std::string responseString = httpVersion + " " + std::to_string(statusCode) + " " + reason + "\r\n\r\n";
-   std::cout << "Sending response " << responseString << std::endl;
+  struct sockaddr_in server_addr;
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_addr.s_addr = INADDR_ANY;
+  server_addr.sin_port = htons(4221);
 
-   send(client, responseString.c_str(), responseString.length(), 0);
-  
-   close(server_fd);
+  if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0) {
+    std::cerr << "Failed to bind to port 4221\n";
+    return 1;
+  }
+
+  int connection_backlog = 5;
+  if (listen(server_fd, connection_backlog) != 0) {
+    std::cerr << "listen failed\n";
+    return 1;
+  }
+
+  struct sockaddr_in client_addr;
+  int client_addr_len = sizeof(client_addr);
+
+  std::cout << "Waiting for a client to connect...\n";
+
+  int client = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+  std::cout << "Client connected\n";
+
+  int recLen = recv(client, (void *)inBuffer.c_str(), bufferSize, 0);
+
+  if (recLen == -1)
+  {
+    perror("recv()");
+    return 1;
+  }
+  else if (recLen)
+  {
+    std::cout << inBuffer << std::endl;
+  }
+  else
+  {
+    std::cout << "Recieved EOF.\n";
+    return 1;
+  }
+  // fd_set rfds;
+  // struct timeval tv;
+  // FD_ZERO(&rfds);
+  // FD_SET(client, &rfds);
+
+  // tv.tv_sec = 5;
+  // tv.tv_usec = 0;
+
+  // int retval = select(1, &rfds, NULL, NULL, &tv);
+
+  // if (retval == -1)
+  // {
+  //   perror("select()");
+  //   return 1;
+  // }
+  // else if (retval)
+  // {
+  //   int recLen = recv(client, (void *)inBuffer.c_str(), bufferSize, MSG_DONTWAIT);
+
+  //   if (recLen == -1)
+  //   {
+  //     perror("recv()");
+  //     return 1;
+  //   }
+  //   else if (recLen)
+  //   {
+  //     std::cout << inBuffer << std::endl;
+  //   }
+  //   else
+  //   {
+  //     std::cout << "Recieved EOF.\n";
+  //     return 1;
+  //   }
+  // }
+  // else
+  // {
+  //   std::cout << "No data within five seconds.\n";
+  //   return 1;
+  // }
+
+  std::string requestLine = inBuffer.substr(0, inBuffer.find("\r\n", 0, 2));
+  std::cout << requestLine << std::endl;
+  size_t beginTargetPos = requestLine.find("/") + 1;
+  size_t endTargetPos = requestLine.find(" ", beginTargetPos);
+  std::string requestTarget = requestLine.substr(beginTargetPos, endTargetPos - beginTargetPos);
+  std::cout << requestTarget << std::endl;
+
+  std::string httpVersion ("HTTP/1.1");
+  int statusCode = 200;
+  std::string reason ("OK");
+
+  if (requestTarget.length())
+  {
+    statusCode = 404;
+    reason = "Not Found";
+  }
+
+  std::string responseString = httpVersion + " " + std::to_string(statusCode) + " " + reason + "\r\n\r\n";
+  std::cout << "Sending response " << responseString << std::endl;
+
+  send(client, responseString.c_str(), responseString.length(), 0);
+
+  close(server_fd);
 
   return 0;
 }
