@@ -50,3 +50,4 @@ vcpkg_installed
 
 # VS files
 .vs/
+.vscode/

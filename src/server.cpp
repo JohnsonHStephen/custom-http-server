@@ -9,10 +9,10 @@
 #include <netdb.h>
 
 int main(int argc, char **argv) {
-  // Flush after every std::cout / std::cerr
-  std::cout << std::unitbuf;
-  std::cerr << std::unitbuf;
-  
+   // Flush after every std::cout / std::cerr
+   std::cout << std::unitbuf;
+   std::cerr << std::unitbuf;
+
    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
    if (server_fd < 0) {
     std::cerr << "Failed to create server socket\n";
@@ -48,8 +48,17 @@ int main(int argc, char **argv) {
   
    std::cout << "Waiting for a client to connect...\n";
   
-   accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+   int client = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
    std::cout << "Client connected\n";
+
+   std::string httpVersion ("HTTP/1.1");
+   int statusCode = 200;
+   std::string reason ("OK");
+
+   std::string responseString = httpVersion + " " + std::to_string(statusCode) + " " + reason + "\r\n\r\n";
+   std::cout << "Sending response " << responseString << std::endl;
+
+   send(client, responseString.c_str(), responseString.length(), 0);
   
    close(server_fd);
 
