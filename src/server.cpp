@@ -49,21 +49,24 @@ int main(int argc, char **argv) {
 
   const std::string& target = request.getRequestTarget();
 
-  // was a target given?
-  if (!target.empty())
+  // empty targets need to respond with status 200
+  if (target.empty())
+  {
+    response.setStatus(200);
+    response.setStatusString("OK");
+  }
+
+  // check for target and starts with echo
+  if (!target.empty() && target.compare(0, 5, "echo/") == 0)
   {
     response.setStatus(200);
     response.setStatusString("OK");
 
-    // check if starts with echo
-    if (target.compare(0, 5, "echo/") == 0)
-    {
-      std::string body = target.substr(5);
-      response.addHeader("Content-Type", "text/plain");
-      response.addHeader("Content-Length", std::to_string(body.length()));
+    std::string body = target.substr(5);
+    response.addHeader("Content-Type", "text/plain");
+    response.addHeader("Content-Length", std::to_string(body.length()));
 
-      response.setBody(body);
-    }
+    response.setBody(body);
   }
 
   sendResponse(client_fd, response);
