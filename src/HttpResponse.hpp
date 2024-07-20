@@ -8,10 +8,6 @@ class HttpResponse
 {
 public:
   HttpResponse()
-      : m_httpVersionMajor ( 1 )
-      , m_httpVersionMinor ( 1 )
-      , m_status ( 404 )
-      , m_statusString ( "Not Found" )
   {}
 
   HttpResponse(const HttpResponse& other)
@@ -36,22 +32,22 @@ public:
   inline void setStatusString(const std::string& other) { m_statusString = other; }
 
   inline std::string getBody() { return m_responseBody; }
-  inline void setBody(const std::string& other) { m_responseBody = other; }
+  void setBody(const std::string &body, const std::string &contentType = "text/plain");
 
   void addHeader(const std::string& title, const std::string& content);
 
   std::string generateResponseString();
 
 private:
-  int m_httpVersionMajor;
-  int m_httpVersionMinor;
+  int m_httpVersionMajor = 1;
+  int m_httpVersionMinor = 1;
 
-  int m_status;
-  std::string m_statusString;
+  int m_status = 404;
+  std::string m_statusString = "Not Found";
 
   std::unordered_map<std::string, std::string> m_headers;
 
-  std::string m_responseBody;
+  std::string m_responseBody = {};
 
 };
 

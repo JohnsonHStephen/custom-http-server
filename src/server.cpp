@@ -176,6 +176,7 @@ void checkForMessage(int server_fd)
 
         int bufferSize = 1000;
         char inBuffer[bufferSize];
+        memset(inBuffer, 0, bufferSize);
 
         // grab the client message
         int recLen = recv(*client_fd, inBuffer, bufferSize, 0);
@@ -239,82 +240,117 @@ HttpResponse generateHttpResponse(HttpRequest request)
 
   const std::string& target = request.getRequestTarget();
 
-  // empty targets need to respond with status 200
-  if (target.empty())
+  if (request.getRequestMethod() == HTTPMETHOD::e_requestMethod_Get)
   {
-    response.setStatus(200);
-    response.setStatusString("OK");
-
-    return response;
-  }
-
-  // check target starts with echo
-  if (target.compare(0, 5, "echo/") == 0)
-  {
-    response.setStatus(200);
-    response.setStatusString("OK");
-
-    std::string body = target.substr(5);
-    response.addHeader("Content-Type", "text/plain");
-    response.addHeader("Content-Length", std::to_string(body.length()));
-
-    response.setBody(body);
-  }
-
-  // check for user-agent target
-  if (target.compare(0, 10, "user-agent") == 0)
-  {
-    response.setStatus(200);
-    response.setStatusString("OK");
-
-    std::string body = request.getHeaderContent("User-Agent");
-
-    if (body.length() > 0)
+    // empty targets need to respond with status 200
+    if (target.empty())
     {
+      response.setStatus(200);
+      response.setStatusString("OK");
+
+      return response;
+    }
+
+    // check target starts with echo
+    if (target.compare(0, 5, "echo/") == 0)
+    {
+      response.setStatus(200);
+      response.setStatusString("OK");
+
+      std::string body = target.substr(5);
       response.addHeader("Content-Type", "text/plain");
       response.addHeader("Content-Length", std::to_string(body.length()));
 
       response.setBody(body);
     }
-  }
 
-  // check for files request target
-  if (target.compare(0, 6, "files/") == 0)
-  {
-    std::fstream fs;
-
-    std::string filename = target.substr(6);
-
-    fs.open(directory + filename);
-
-    // check whether the file failed to open
-    if (fs.fail())
-      return response;
-
-    // get length of file:
-    fs.seekg (0, fs.end);
-    int length = fs.tellg();
-    fs.seekg (0, fs.beg);
-
-    char fileContent[length];
-
-    // read file contents
-    fs.read(fileContent, length);
-
-    if (fs)
+    // check for user-agent target
+    if (target.compare(0, 10, "user-agent") == 0)
     {
       response.setStatus(200);
       response.setStatusString("OK");
 
-      response.addHeader("Content-Type", "application/octet-stream");
-      response.addHeader("Content-Length", std::to_string(length));
+      std::string body = request.getHeaderContent("User-Agent");
 
-      response.setBody(fileContent);
+      if (body.length() > 0)
+      {
+        response.setBody(body);
+      }
     }
-    else
-      std::cout << "error: only " << fs.gcount() << " could be read";
 
-    fs.close();
+    // check for files request target
+    if (target.compare(0, 6, "files/") == 0)
+    {
+      std::ifstream fs;
+
+      std::string filename = target.substr(6);
+
+      fs.open(directory + filename);
+
+      // check whether the file failed to open
+      if (fs.fail())
+        return response;
+
+      // get length of file:
+      fs.seekg (0, fs.end);
+      int length = fs.tellg();
+      fs.seekg (0, fs.beg);
+
+      char fileContent[length];
+      memset(fileContent, 0, length);
+
+      // read file contents
+      fs.read(fileContent, length);
+
+      if (fs)
+      {
+        response.setStatus(200);
+        response.setStatusString("OK");
+
+        response.setBody(fileContent, "application/octet-stream");
+      }
+      else
+        std::cout << "error: only " << fs.gcount() << " could be read";
+
+      fs.close();
+    }
+  }
+  else if (request.getRequestMethod() == HTTPMETHOD::e_requestMethod_Post)
+  {
+    // check for files request target
+    if (target.compare(0, 6, "files/") == 0)
+    {
+      std::ofstream fs;
+      int length = -1;
+
+      if (request.getHeaderContent("Content-Type").compare("application/octet-stream") != 0)
+        return response;
+
+      std::string filename = target.substr(6);
+
+      fs.open(directory + filename);
+
+      // check whether the file failed to open
+      if (fs.fail())
+        return response;
+
+      // write contents to file
+      fs.write(request.getBody().c_str(), request.getBodyLength());
+
+      // see if the file failed to write
+      if (fs.fail())
+      {
+        response.setStatus(409);
+        response.setStatusString("Could not write to file");
+      }
+      else
+      {
+        response.setStatus(201);
+        response.setStatusString("Created");
+      }
+
+      fs.close();
+    }
   }
 
   return response;

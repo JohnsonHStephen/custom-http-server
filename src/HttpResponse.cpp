@@ -1,5 +1,12 @@
 #include "HttpResponse.hpp"
 
+void HttpResponse::setBody(const std::string &body, const std::string &contentType)
+{
+  addHeader("Content-Type", contentType);
+  addHeader("Content-Length", std::to_string(body.length()));
+  m_responseBody = body;
+}
+
 void HttpResponse::addHeader(const std::string &title, const std::string &content)
 {
   m_headers.emplace(title, content);
