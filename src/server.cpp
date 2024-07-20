@@ -7,13 +7,13 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <vector>
 
 #include "HttpRequest.hpp"
 #include "HttpResponse.hpp"
 
 int openSocket(uint16_t port);
-int awaitConnection(int server_fd);
-std::string receiveFromClient(int client_fd);
+void checkForMessage(int server_fd);
 HttpResponse generateHttpResponse(HttpRequest request);
 void sendResponse(int client_fd, HttpResponse response);
 
@@ -27,30 +27,9 @@ int main(int argc, char **argv) {
   if (server_fd < 0)
     return 1;
 
-  int client_fd = awaitConnection(server_fd);
+  checkForMessage(server_fd);
 
-  if (client_fd < 0)
-  {
-    close(server_fd);
-    return 1;
-  }
-
-  std::string requestString = receiveFromClient(client_fd);
-
-  if (requestString.empty())
-  {
-    close(client_fd);
-    close(server_fd);
-    return 1;
-  }
-
-  HttpRequest request (requestString);
-
-  sendResponse(client_fd, generateHttpResponse(request));
-
-  close(client_fd);
   close(server_fd);
-
   return 0;
 }
 
@@ -92,13 +71,18 @@ int openSocket(uint16_t port)
     return -1;
   }
 
+  int connection_backlog = 5;
+  if (listen(server_fd, connection_backlog) != 0) {
+    std::cerr << "listen failed\n";
+    return -1;
+  }
+
   return server_fd;
 }
 
 /************************************************************************
  * Description
- *    awaits for and accepts a client to connect to the
- *    provided server socket
+ *    accepts a client to connect to the provided server socket
  *
  * Parameters
  *    server_fd: the file descriptor of the server socket
@@ -107,20 +91,18 @@ int openSocket(uint16_t port)
  *    the client file descriptor
  *    -1 on failure
  ***********************************************************************/
-int awaitConnection(int server_fd)
+int connectClient(int server_fd)
 {
-  int connection_backlog = 5;
-  if (listen(server_fd, connection_backlog) != 0) {
-    std::cerr << "listen failed\n";
-    return -1;
-  }
-
   struct sockaddr_in client_addr;
   int client_addr_len = sizeof(client_addr);
 
-  std::cout << "Waiting for a client to connect...\n";
-
   int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+  if (client_fd == -1)
+  {
+    perror("accept()");
+    return client_fd;
+  }
+
   std::cout << "Client connected\n";
 
   return client_fd;
@@ -128,36 +110,104 @@ int awaitConnection(int server_fd)
 
 /************************************************************************
  * Description
- *    pulls any data received from the client
+ *    Constantly polls the server socket and client sockets for
+ *    incomming messages the server socket implies new connections
+ *    loops until all conections are done and no msgs are received in 5
+ *    seconds. Needs at least one connection before exiting
  *
  * Parameters
- *    client_fd: the file descriptor of the client
+ *    server_fd: the file descriptor of the server socket
  *
  * Output
  *    the received data
  ***********************************************************************/
-std::string receiveFromClient(int client_fd)
+void checkForMessage(int server_fd)
 {
-  int bufferSize = 1000;
-  std::string inBuffer (bufferSize, 0);
+  fd_set rfds;
+  struct timeval tv;
+  int max_fd = server_fd;
+  std::vector<int> client_fds;
 
-  int recLen = recv(client_fd, (void *)inBuffer.c_str(), bufferSize, 0);
+  // tracks if a connection has happened yet
+  bool firstConnection = false;
 
-  if (recLen == -1)
+  while (true)
   {
-    perror("recv()");
-    return {};
+    FD_ZERO(&rfds);
+    // Track all of the file descriptors for change
+    FD_SET(server_fd, &rfds);
+    for (auto client_fd = client_fds.begin(); client_fd != client_fds.end(); ++client_fd)
+    {
+      FD_SET(*client_fd, &rfds);
+      if (*client_fd > max_fd)
+        max_fd = *client_fd;
+    }
+
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+
+    // wait 5 seconds for a message from any client or possible new client
+    int retVal = select(max_fd+1, &rfds, NULL, NULL, &tv);
+
+    if (retVal == -1)
+    {
+      perror("select()");
+    }
+    else if (retVal)
+    {
+      // check if any client sent a message
+      for (auto client_fd = client_fds.begin(); client_fd != client_fds.end(); ++client_fd)
+      {
+        if (!FD_ISSET(*client_fd, &rfds))
+          continue;
+
+        int bufferSize = 1000;
+        std::string inBuffer (bufferSize, 0);
+
+        // grab the client message
+        int recLen = recv(*client_fd, (void *)inBuffer.c_str(), bufferSize, 0);
+
+        if (recLen == -1)
+        {
+          perror("recv()");
+        }
+        else if (recLen)
+        {
+          std::cout << inBuffer << std::endl;
+          HttpRequest request (inBuffer);
+          sendResponse(*client_fd, generateHttpResponse(request));
+        }
+        else // they have closed the connection
+          std::cout << "Received EOF.\n";
+
+        close(*client_fd);
+        // remove the closed connection
+        client_fd = client_fds.erase(client_fd);
+        // we need to check if we've ended now before trying to increment
+        if (client_fd == client_fds.end())
+          break;
+      }
+
+      // New client is attempting to connect
+      if (FD_ISSET(server_fd, &rfds))
+      {
+        int newClient = connectClient(server_fd);
+        if (newClient != -1)
+        {
+          // we have recieved a connection so now we can timeout
+          firstConnection = true;
+          client_fds.emplace_back(newClient);
+        }
+      }
+    }
+    else
+    {
+      std::cout << "Did not recieve any data in 5 seconds" << std::endl;
+      if (firstConnection && client_fds.empty())
+        break;
+    }
   }
-  else if (recLen)
-  {
-    std::cout << inBuffer << std::endl;
-    return inBuffer;
-  }
-  else
-  {
-    std::cout << "Received EOF.\n";
-    return {};
-  }
+
 }
 
 /************************************************************************
@@ -220,7 +270,7 @@ HttpResponse generateHttpResponse(HttpRequest request)
 
 /************************************************************************
  * Description
- *    Sends the response http response to the client
+ *    Sends the http response to the client
  *
  * Parameters
  *    client_fd: the file descriptor of the client
