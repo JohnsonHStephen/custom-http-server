@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <fstream>
 #include <vector>
+#include <zlib.h>
 
 #include "HttpRequest.hpp"
 #include "HttpResponse.hpp"
@@ -17,6 +18,8 @@ int openSocket(uint16_t port);
 void checkForMessage(int server_fd);
 HttpResponse generateHttpResponse(HttpRequest request);
 void sendResponse(int client_fd, HttpResponse response);
+void compressData(std::string input, std::string outfilename);
+std::string readFile(std::string filename);
 
 static std::string directory ("./");
 
@@ -258,8 +261,18 @@ HttpResponse generateHttpResponse(HttpRequest request)
       response.setStatusString("OK");
 
       std::string body = target.substr(5);
-      response.addHeader("Content-Type", "text/plain");
-      response.addHeader("Content-Length", std::to_string(body.length()));
+
+      // check for compression
+      if (request.getHeaderContent("Accept-Encoding").compare("gzip") == 0)
+      {
+        const std::string temporaryFilename = "/tmp/temporary.gzip";
+        compressData(body, temporaryFilename);
+
+        response.addHeader("Content-Encoding", "gzip");
+
+        body = readFile(temporaryFilename);
+        std::cout << body << std::endl;
+      }
 
       response.setBody(body);
     }
@@ -281,38 +294,12 @@ HttpResponse generateHttpResponse(HttpRequest request)
     // check for files request target
     if (target.compare(0, 6, "files/") == 0)
     {
-      std::ifstream fs;
+      std::string filename = directory + target.substr(6);
 
-      std::string filename = target.substr(6);
+      response.setStatus(200);
+      response.setStatusString("OK");
 
-      fs.open(directory + filename);
-
-      // check whether the file failed to open
-      if (fs.fail())
-        return response;
-
-      // get length of file:
-      fs.seekg (0, fs.end);
-      int length = fs.tellg();
-      fs.seekg (0, fs.beg);
-
-      char fileContent[length];
-      memset(fileContent, 0, length);
-
-      // read file contents
-      fs.read(fileContent, length);
-
-      if (fs)
-      {
-        response.setStatus(200);
-        response.setStatusString("OK");
-
-        response.setBody(fileContent, "application/octet-stream");
-      }
-      else
-        std::cout << "error: only " << fs.gcount() << " could be read";
-
-      fs.close();
+      response.setBody(readFile(directory + target.substr(6)), "application/octet-stream");
     }
   }
   else if (request.getRequestMethod() == HTTPMETHOD::e_requestMethod_Post)
@@ -371,4 +358,67 @@ void sendResponse(int client_fd, HttpResponse response)
 {
   std::string&& responseString = response.generateResponseString();
   send(client_fd, responseString.c_str(), responseString.length(), 0);
+}
+
+/************************************************************************
+ * Description
+ *    Compresses a file using gzip compression
+ *
+ * Parameters
+ *    input: the uncompressed data
+ *    outfilename: the location to save the compressed file
+ *
+ * Output
+ *    None
+ ***********************************************************************/
+void compressData(std::string input, std::string outfilename)
+{
+  // open compressed file
+  gzFile outfile = gzopen(outfilename.c_str(), "wb");
+
+  if (!outfile) return;
+
+  gzwrite(outfile, input.c_str(), input.length());
+
+  gzclose(outfile);
+}
+
+/************************************************************************
+ * Description
+ *    Reads the entire contents of a file
+ *
+ * Parameters
+ *    filename: the location of the file to read
+ *
+ * Output
+ *    The content of the file
+ ***********************************************************************/
+std::string readFile(std::string filename)
+{
+  std::ifstream fs;
+  fs.open(filename);
+
+  // check whether the file failed to open
+  if (fs.fail())
+    return {};
+
+  // get length of file:
+  fs.seekg (0, fs.end);
+  int length = fs.tellg();
+  fs.seekg (0, fs.beg);
+
+  char fileContent[length];
+  memset(fileContent, 0, length);
+
+  // read file contents
+  fs.read(fileContent, length);
+
+  if (!fs)
+    std::cout << "error: only " << fs.gcount() << " could be read";
+
+  fs.close();
+
+  std::cout << "Read " << fs.gcount() << " bytes\n";
+
+  return fileContent;
 }
