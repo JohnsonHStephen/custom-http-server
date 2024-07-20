@@ -191,7 +191,7 @@ void checkForMessage(int server_fd)
         else if (recLen)
         {
           std::cout << inBuffer << std::endl;
-          HttpRequest request (inBuffer);
+          HttpRequest request (std::string(inBuffer, recLen));
           sendResponse(*client_fd, generateHttpResponse(request));
         }
         else // they have closed the connection
@@ -420,5 +420,5 @@ std::string readFile(std::string filename)
 
   std::cout << "Read " << fs.gcount() << " bytes\n";
 
-  return fileContent;
+  return std::string(fileContent, fs.gcount());
 }
