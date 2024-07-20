@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <fstream>
 #include <vector>
 
 #include "HttpRequest.hpp"
@@ -17,10 +18,22 @@ void checkForMessage(int server_fd);
 HttpResponse generateHttpResponse(HttpRequest request);
 void sendResponse(int client_fd, HttpResponse response);
 
+static std::string directory ("./");
+
 int main(int argc, char **argv) {
   // Flush after every std::cout / std::cerr
   std::cout << std::unitbuf;
   std::cerr << std::unitbuf;
+
+  for (int i = 1; i < argc; i++)
+  {
+    if (strcmp(argv[i], "--directory") == 0 && i+1 < argc)
+    {
+      directory = argv[i+1];
+    }
+  }
+
+  std::cout << directory << std::endl;
 
   int server_fd = openSocket(4221);
 
@@ -162,10 +175,10 @@ void checkForMessage(int server_fd)
           continue;
 
         int bufferSize = 1000;
-        std::string inBuffer (bufferSize, 0);
+        char inBuffer[bufferSize];
 
         // grab the client message
-        int recLen = recv(*client_fd, (void *)inBuffer.c_str(), bufferSize, 0);
+        int recLen = recv(*client_fd, inBuffer, bufferSize, 0);
 
         if (recLen == -1)
         {
@@ -263,6 +276,45 @@ HttpResponse generateHttpResponse(HttpRequest request)
 
       response.setBody(body);
     }
+  }
+
+  // check for files request target
+  if (target.compare(0, 6, "files/") == 0)
+  {
+    std::fstream fs;
+
+    std::string filename = target.substr(6);
+
+    fs.open(directory + filename);
+
+    // check whether the file failed to open
+    if (fs.fail())
+      return response;
+
+    // get length of file:
+    fs.seekg (0, fs.end);
+    int length = fs.tellg();
+    fs.seekg (0, fs.beg);
+
+    char fileContent[length];
+
+    // read file contents
+    fs.read(fileContent, length);
+
+    if (fs)
+    {
+      response.setStatus(200);
+      response.setStatusString("OK");
+
+      response.addHeader("Content-Type", "application/octet-stream");
+      response.addHeader("Content-Length", std::to_string(length));
+
+      response.setBody(fileContent);
+    }
+    else
+      std::cout << "error: only " << fs.gcount() << " could be read";
+
+    fs.close();
   }
 
   return response;
