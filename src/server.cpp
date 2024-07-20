@@ -296,10 +296,18 @@ HttpResponse generateHttpResponse(HttpRequest request)
     {
       std::string filename = directory + target.substr(6);
 
-      response.setStatus(200);
-      response.setStatusString("OK");
+      response.setStatus(404);
+      response.setStatusString("Not Found");
 
-      response.setBody(readFile(directory + target.substr(6)), "application/octet-stream");
+      std::string body = readFile(directory + target.substr(6));
+
+      if (body.length() > 0)
+      {
+        response.setStatus(200);
+        response.setStatusString("OK");
+
+        response.setBody(body, "application/octet-stream");
+      }
     }
   }
   else if (request.getRequestMethod() == HTTPMETHOD::e_requestMethod_Post)
