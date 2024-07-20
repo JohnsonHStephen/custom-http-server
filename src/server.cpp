@@ -14,6 +14,7 @@
 int openSocket(uint16_t port);
 int awaitConnection(int server_fd);
 std::string receiveFromClient(int client_fd);
+HttpResponse generateHttpResponse(HttpRequest request);
 void sendResponse(int client_fd, HttpResponse response);
 
 int main(int argc, char **argv) {
@@ -45,31 +46,7 @@ int main(int argc, char **argv) {
 
   HttpRequest request (requestString);
 
-  HttpResponse response;
-
-  const std::string& target = request.getRequestTarget();
-
-  // empty targets need to respond with status 200
-  if (target.empty())
-  {
-    response.setStatus(200);
-    response.setStatusString("OK");
-  }
-
-  // check for target and starts with echo
-  if (!target.empty() && target.compare(0, 5, "echo/") == 0)
-  {
-    response.setStatus(200);
-    response.setStatusString("OK");
-
-    std::string body = target.substr(5);
-    response.addHeader("Content-Type", "text/plain");
-    response.addHeader("Content-Length", std::to_string(body.length()));
-
-    response.setBody(body);
-  }
-
-  sendResponse(client_fd, response);
+  sendResponse(client_fd, generateHttpResponse(request));
 
   close(client_fd);
   close(server_fd);
@@ -181,6 +158,64 @@ std::string receiveFromClient(int client_fd)
     std::cout << "Received EOF.\n";
     return {};
   }
+}
+
+/************************************************************************
+ * Description
+ *    creates an http response based on the request
+ *
+ * Parameters
+ *    request: the class containing all of the relevant request data
+ *
+ * Output
+ *    the http response
+ ***********************************************************************/
+HttpResponse generateHttpResponse(HttpRequest request)
+{
+  HttpResponse response;
+
+  const std::string& target = request.getRequestTarget();
+
+  // empty targets need to respond with status 200
+  if (target.empty())
+  {
+    response.setStatus(200);
+    response.setStatusString("OK");
+
+    return response;
+  }
+
+  // check target starts with echo
+  if (target.compare(0, 5, "echo/") == 0)
+  {
+    response.setStatus(200);
+    response.setStatusString("OK");
+
+    std::string body = target.substr(5);
+    response.addHeader("Content-Type", "text/plain");
+    response.addHeader("Content-Length", std::to_string(body.length()));
+
+    response.setBody(body);
+  }
+
+  // check for user-agent target
+  if (target.compare(0, 10, "user-agent") == 0)
+  {
+    response.setStatus(200);
+    response.setStatusString("OK");
+
+    std::string body = request.getHeaderContent("User-Agent");
+
+    if (body.length() > 0)
+    {
+      response.addHeader("Content-Type", "text/plain");
+      response.addHeader("Content-Length", std::to_string(body.length()));
+
+      response.setBody(body);
+    }
+  }
+
+  return response;
 }
 
 /************************************************************************

@@ -1,8 +1,8 @@
 #ifndef HTTPRESPONSE_H
 #define HTTPRESPONSE_H
 
-#include <map>
 #include <string>
+#include <unordered_map>
 
 class HttpResponse
 {
@@ -49,7 +49,7 @@ private:
   int m_status;
   std::string m_statusString;
 
-  std::map<std::string, std::string> m_headers;
+  std::unordered_map<std::string, std::string> m_headers;
 
   std::string m_responseBody;
 
