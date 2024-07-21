@@ -387,7 +387,7 @@ void compressData(const std::string& data, const std::string& acceptedEncoders, 
     if (!compressionType.empty())
       response->addHeader("Content-Encoding", compressionType);
 
-    response->setBody(compressedData);
+    response->setBody(compressedData, contentType);
   }
 }
 
