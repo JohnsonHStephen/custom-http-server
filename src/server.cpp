@@ -18,7 +18,8 @@ int openSocket(uint16_t port);
 void checkForMessage(int server_fd);
 HttpResponse generateHttpResponse(HttpRequest request);
 void sendResponse(int client_fd, HttpResponse response);
-void compressData(std::string input, std::string outfilename);
+void compressData(const std::string& data, const std::string& acceptedEncoders, HttpResponse* response, const std::string &contentType = "text/plain");
+std::string compressDataGzip(std::string data);
 std::string readFile(std::string filename);
 
 static std::string directory ("./");
@@ -260,21 +261,7 @@ HttpResponse generateHttpResponse(HttpRequest request)
       response.setStatus(200);
       response.setStatusString("OK");
 
-      std::string body = target.substr(5);
-
-      // check for compression
-      if (request.getHeaderContent("Accept-Encoding").compare("gzip") == 0)
-      {
-        const std::string temporaryFilename = "/tmp/temporary.gzip";
-        compressData(body, temporaryFilename);
-
-        response.addHeader("Content-Encoding", "gzip");
-
-        body = readFile(temporaryFilename);
-        std::cout << body << std::endl;
-      }
-
-      response.setBody(body);
+      compressData(target.substr(5), request.getHeaderContent("Accept-Encoding"), &response);
     }
 
     // check for user-agent target
@@ -287,7 +274,7 @@ HttpResponse generateHttpResponse(HttpRequest request)
 
       if (body.length() > 0)
       {
-        response.setBody(body);
+        compressData(body, request.getHeaderContent("Accept-Encoding"), &response);
       }
     }
 
@@ -306,7 +293,7 @@ HttpResponse generateHttpResponse(HttpRequest request)
         response.setStatus(200);
         response.setStatusString("OK");
 
-        response.setBody(body, "application/octet-stream");
+        compressData(body, request.getHeaderContent("Accept-Encoding"), &response, "application/octet-stream");
       }
     }
   }
@@ -370,25 +357,64 @@ void sendResponse(int client_fd, HttpResponse response)
 
 /************************************************************************
  * Description
- *    Compresses a file using gzip compression
+ *    Compresses data based on available compression
+ *    (does no compression when unavailable)
+ *
+ * Parameters
+ *    data: the data to be compressed
+ *    acceptedEncoders: csv of accepted encoders
+ *    response: compressed data is going to be written directly here
+ *        with encoder header
+ *
+ * Output
+ *    compressed data
+ ***********************************************************************/
+void compressData(const std::string& data, const std::string& acceptedEncoders, HttpResponse* response, const std::string &contentType)
+{
+  std::string compressedData = data;
+  std::string compressionType = {};
+
+  // check for compression
+  if (acceptedEncoders.find("gzip") != std::string::npos)
+  {
+    compressedData = compressDataGzip(data);
+
+    compressionType = "gzip";
+  }
+
+  if (compressedData.length() > 0)
+  {
+    if (!compressionType.empty())
+      response->addHeader("Content-Encoding", compressionType);
+
+    response->setBody(compressedData);
+  }
+}
+
+/************************************************************************
+ * Description
+ *    Compresses data using gzip compression with a temporary file
  *
  * Parameters
  *    input: the uncompressed data
- *    outfilename: the location to save the compressed file
  *
  * Output
- *    None
+ *    compressed data
  ***********************************************************************/
-void compressData(std::string input, std::string outfilename)
+std::string compressDataGzip(std::string data)
 {
+  const std::string temporaryFilename = "/tmp/temporary.gzip";
+
   // open compressed file
-  gzFile outfile = gzopen(outfilename.c_str(), "wb");
+  gzFile outfile = gzopen(temporaryFilename.c_str(), "wb");
 
-  if (!outfile) return;
+  if (!outfile) return {};
 
-  gzwrite(outfile, input.c_str(), input.length());
+  gzwrite(outfile, data.c_str(), data.length());
 
   gzclose(outfile);
+
+  return readFile(temporaryFilename);
 }
 
 /************************************************************************
